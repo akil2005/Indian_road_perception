@@ -74,17 +74,26 @@ def show_seg_result(img, result, index, epoch, save_dir=None, is_ll=False,palett
 
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     # Plots one bounding box on image img
-    tl = line_thickness or round(0.0001 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
+    tl = line_thickness or round(0.001 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+    
+    # 1. Draw the actual box
     cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
-    # if label:
-    #     tf = max(tl - 1, 1)  # font thickness
-    #     t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
-    #     c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
-    #     cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # filled
-    #     print(label)
-        # cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
+    
+    # 2. Draw the label (NOW UNCOMMENTED)
+    if label:
+        tf = max(tl - 1, 1)  # font thickness
+        # Use Font 0 (Simplex) - works on every system
+        t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
+        c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
+        
+        # Draw a solid background rectangle so the text is readable
+        cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # filled
+        
+        # Draw the text in white
+        cv2.putText(img, label, (c1[0], c1[1] - 2), 0, tl / 3, [255, 255, 255], 
+                    thickness=tf, lineType=cv2.LINE_AA)
 
 
 if __name__ == "__main__":

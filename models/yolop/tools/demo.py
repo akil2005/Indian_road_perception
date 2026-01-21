@@ -6,6 +6,10 @@ from pathlib import Path
 import imageio
 import io  # Required for the BytesIO fix
 
+#importing the custom distance module
+from distance import estimate_distance 
+
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(BASE_DIR)
 
@@ -44,9 +48,21 @@ def detect(cfg, opt):
         cfg, cfg.LOG_DIR, 'demo')
 
     device = select_device(logger, opt.device)
-    if os.path.exists(opt.save_dir):  # output dir
-        shutil.rmtree(opt.save_dir)  # delete dir
-    os.makedirs(opt.save_dir)  # make new dir
+    
+    # ===== MODIFIED: Prevent overwriting previous outputs =====
+    # Original code deleted the entire output directory and recreated it,
+    # which meant each run would lose all previous results.
+    # 
+    # NEW APPROACH: Create a unique timestamped subdirectory for each run.
+    # This ensures:
+    # 1. Each inference run gets its own folder (YYYY-MM-DD_HH:MM:SS format)
+    # 2. All previous outputs are permanently preserved
+    # 3. Easy to track when each inference was performed
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+    save_dir = os.path.join(opt.save_dir, timestamp)
+    os.makedirs(save_dir, exist_ok=True)  # Create nested directories if needed
+    opt.save_dir = save_dir  # Update the save path for all output files
+    # ===== END OF MODIFICATION ===== 
     half = device.type != 'cpu'  # half precision only supported on CUDA
 
     # Load model
@@ -127,10 +143,25 @@ def detect(cfg, opt):
         img_det = show_seg_result(img_det, (da_seg_mask, ll_seg_mask), _, _, is_demo=True)
 
         if len(det):
-            det[:,:4] = scale_coords(img.shape[2:], det[:,:4], img_det.shape).round()
+            # Rescale boxes to original image size
+            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], img_det.shape).round()
+
             for *xyxy, conf, cls in reversed(det):
-                label_det_pred = f'{names[int(cls)]} {conf:.2f}'
-                plot_one_box(xyxy, img_det, label=label_det_pred, color=colors[int(cls)], line_thickness=2)
+                h, w, _ = img_det.shape
+                
+                # 1. Calculate distance
+                dist = estimate_distance(xyxy, h)
+                
+                # 2. FORCE the label string
+                # We use a very obvious format to make sure it's working
+                my_label = f"Distance: {dist}m"
+                
+                # 3. DEBUG: Print to terminal so you know it's working
+                # If you see this in your terminal, the code IS running
+                print(f"Drawing Label: {my_label}")
+
+                # 4. DRAW: Use a bright color (Green: [0, 255, 0]) and thick lines
+                plot_one_box(xyxy, img_det, label=my_label, color=[0, 255, 0], line_thickness=3)
         
         if dataset.mode == 'images':
             cv2.imwrite(save_path, img_det)
