@@ -1,8 +1,18 @@
+# Python
+**/__pycache__/
+*.py[cod]
 venv/
-__pycache__/
+
+# AI Models & Weights (Too large for Git)
 *.pt
 *.pth
 *.onnx
+
+# Data & Results
+data/raw_videos/*
+!data/raw_videos/.gitkeep
 models/yolop/runs/
-data/raw_videos/
+inference/output/
+
+# IDE
 .vscode/
