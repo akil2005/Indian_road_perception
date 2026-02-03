@@ -217,8 +217,12 @@ def detect(cfg, opt):
             # HAZARD CHECK: Is the Cow inside the Green Carpet?
             if safety_engine.tunnel_poly is not None:
                 cx_feet = (x1 + x2) // 2
-                # Check pointPolygonTest on feet location (y2)
-                dist = cv2.pointPolygonTest(safety_engine.tunnel_poly, (cx_feet, y2), True)
+                
+                # --- THE FIX: Force conversion to standard Python float ---
+                pt_to_test = (float(cx_feet), float(y2)) 
+                
+                dist = cv2.pointPolygonTest(safety_engine.tunnel_poly, pt_to_test, True)
+                
                 if dist > 0: # Inside Lane!
                      cv2.putText(img_det, "OBSTACLE!", (x1, y1-30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
 

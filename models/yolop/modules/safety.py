@@ -24,82 +24,82 @@ class SafetyManager:
 
     def generate_dynamic_carpet(self, da_mask, ll_mask, h, w):
         """
-        UNIVERSAL LANE LOGIC: Supports both Left and Right lanes.
-        Decides based on Lane Width, not hardcoded positions.
+        FINAL LOGIC: Universal Lane Handling + Hood-Centric Fallback.
         """
         scan_y = int(h * 0.70)
         mid_x = w // 2
         
-        # 1. Scan FULL Width (Remove the "Blinder")
-        # We need to see the Right Shoulder if we are in the Right Lane!
+        # 1. Scan Lane Lines
         ll_slice = ll_mask[scan_y-5:scan_y+5, :]
-        
-        # Get all lane pixels
         all_pixels = np.where(ll_slice == 1)[1]
         
-        # Default fallback
-        target_x = mid_x 
+        target_x = mid_x # Default: Straight ahead
         
-        if len(all_pixels) == 0:
-            # NO LINES? Drift slowly to previous position
-            if self.prev_target_x is not None:
-                target_x = self.prev_target_x
-        else:
-            # 2. Find "Left Candidate" and "Right Candidate" relative to center
-            # L_cand = The pixel closest to center, but on the LEFT side
-            # R_cand = The pixel closest to center, but on the RIGHT side
-            
+        # =========================================================
+        # CASE 1: LANE LINES DETECTED (Structured Road)
+        # =========================================================
+        if len(all_pixels) > 0:
             l_candidates = all_pixels[all_pixels < mid_x]
             r_candidates = all_pixels[all_pixels >= mid_x]
             
             l_pos = int(l_candidates[-1]) if len(l_candidates) > 0 else None
             r_pos = int(r_candidates[0]) if len(r_candidates) > 0 else None
             
-            # Standard Lane Width (approx 25% of screen)
-            # Used for projection if one line is missing
             std_width = int(w * 0.23) 
-            
-            # Max Valid Width (approx 45% of screen)
-            # If gap is bigger than this, we are looking at the opposite road edge!
             max_valid_width = int(w * 0.45)
 
-            # --- DECISION LOGIC ---
-            
             if l_pos is not None and r_pos is not None:
-                # We see lines on BOTH sides. Check the gap.
                 gap = r_pos - l_pos
-                
                 if gap < max_valid_width:
-                    # Case A: VALID LANE (Highway Right Lane OR Highway Left Lane)
-                    # The lines are close enough to be a single lane. Center strictly between them.
-                    target_x = (l_pos + r_pos) // 2
+                    target_x = (l_pos + r_pos) // 2 # Center in Lane
                 else:
-                    # Case B: GAP TOO BIG (Two-Way Road or Missing Divider)
-                    # We are seeing the Left Shoulder and the Far Right Edge.
-                    # IGNORE r_pos. Trust l_pos (Left Edge) and project center.
-                    target_x = l_pos + int(std_width * 0.5)
+                    target_x = l_pos + int(std_width * 0.5) # Hug Left
             
             elif l_pos is not None:
-                # Case C: Only Left Line Visible
-                # Project center to the right
                 target_x = l_pos + int(std_width * 0.5)
-                
             elif r_pos is not None:
-                # Case D: Only Right Line Visible
-                # Project center to the left
                 target_x = r_pos - int(std_width * 0.5)
 
-        # 3. Stabilization (Jump Rejection)
-        if self.prev_target_x is not None:
-            if abs(target_x - self.prev_target_x) > 60: # Allow bigger jumps for lane changes
-                # Soft reject: Move heavily towards new target but don't snap
-                target_x = int(0.6 * self.prev_target_x + 0.4 * target_x)
+            # Standard Stabilization for Lanes
+            if self.prev_target_x is not None:
+                if abs(target_x - self.prev_target_x) > 60:
+                    target_x = int(0.6 * self.prev_target_x + 0.4 * target_x)
+                else:
+                    target_x = int(0.7 * self.prev_target_x + 0.3 * target_x)
+
+        # =========================================================
+        # CASE 2: NO LANE LINES (Unstructured / Dirt Road)
+        # =========================================================
+        else:
+            # STRATEGY: "Hood-Centric Projection"
+            # We don't want to snap to the road center. We want to project
+            # the car's current heading (Hood Center), but gently curve
+            # if the drivable area turns sharply.
+            
+            # 1. Find Drivable Area Center (Green Mask)
+            da_slice = da_mask[scan_y, :]
+            road_pixels = np.where(da_slice == 1)[0]
+            
+            if len(road_pixels) > 0:
+                da_center = int(np.median(road_pixels))
+                
+                # 2. BLEND: 70% Hood Center (Stay Straight), 30% Road Curve
+                # This prevents "Jumping" to the center of a wide dirt road
+                # but allows the carpet to turn slightly if the road bends.
+                target_x = int((0.7 * mid_x) + (0.3 * da_center))
             else:
-                target_x = int(0.7 * self.prev_target_x + 0.3 * target_x)
-        
+                target_x = mid_x # Total blind? Straight ahead.
+
+            # 3. HEAVY STABILIZATION (The "No-Jump" Rule)
+            # On dirt roads, the mask flickers. We use strong hysteresis.
+            if self.prev_target_x is not None:
+                # 95% History, 5% New -> Very slow, smooth drift
+                target_x = int(0.95 * self.prev_target_x + 0.05 * target_x)
+
+        # Update History
         self.prev_target_x = target_x
 
-        # 4. Build Trapezoid
+        # Build Trapezoid
         hood_w = int(w * 0.29)
         top_w = int(w * 0.10)
         car_center = w // 2
